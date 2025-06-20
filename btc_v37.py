@@ -6,11 +6,23 @@ from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from pytz import timezone
 from telegram import Bot
-from bip_utils import Bip39SeedGenerator, Bip44, Bip44Coins, Bip44Changes, Bip39MnemonicValidator
+from bip_utils import (
+    Bip39SeedGenerator,
+    Bip44,
+    Bip44Coins,
+    Bip44Changes,
+    Bip39MnemonicValidator,
+)
 
 # Telegram setup
-TELEGRAM_TOKEN = "8045266227:AAEpVuDVTtqEJM1on7vkjCESe_hif7pMeAw"
-TELEGRAM_CHAT_ID = "79171664"
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+    raise EnvironmentError(
+        "TELEGRAM_TOKEN and TELEGRAM_CHAT_ID environment variables must be set"
+    )
+
 bot = Bot(token=TELEGRAM_TOKEN)
 
 # Logging
@@ -30,17 +42,35 @@ with open(os.path.join(DICTIONARY_DIR, "brainwallet.txt"), "r", encoding="utf-8"
 with open(os.path.join(DICTIONARY_DIR, "mnemonic.txt"), "r", encoding="utf-8") as f:
     mnemonic_phrases = [line.strip() for line in f if len(line.strip().split()) == 12]
 
-with open(os.path.join(DICTIONARY_DIR, "broken_seeds.txt"), "r", encoding="utf-8") as f:
-    broken_seeds = [line.strip() for line in f if len(line.strip().split()) == 12]
+broken_path = os.path.join(DICTIONARY_DIR, "broken_seeds.txt")
+if os.path.exists(broken_path):
+    with open(broken_path, "r", encoding="utf-8") as f:
+        broken_seeds = [line.strip() for line in f if len(line.strip().split()) == 12]
+else:
+    logging.warning("broken_seeds.txt not found, skipping")
+    broken_seeds = []
 
-def mnemonic_to_address(mnemonic_phrase):
+def mnemonic_to_address(mnemonic_phrase: str) -> str:
+    """Convert a BIP39 mnemonic to the first Bitcoin address."""
     seed_bytes = Bip39SeedGenerator(mnemonic_phrase).Generate()
     bip44_mst = Bip44.FromSeed(seed_bytes, Bip44Coins.BITCOIN)
-    return bip44_mst.Purpose().Coin().Account(0).Change(Bip44Changes.CHAIN_EXT).AddressIndex(0).PublicKey().ToAddress()
+    return (
+        bip44_mst
+        .Purpose()
+        .Coin()
+        .Account(0)
+        .Change(Bip44Changes.CHAIN_EXT)
+        .AddressIndex(0)
+        .PublicKey()
+        .ToAddress()
+    )
 
 def check_and_report(phrase, mode):
     try:
         if len(phrase.strip().split()) != 12:
+            return
+        if not Bip39MnemonicValidator(phrase).Validate():
+            logger.warning(f"[{mode}] invalid mnemonic skipped: '{phrase}'")
             return
         address = mnemonic_to_address(phrase)
         balance = 0  # Here would be a real balance check
