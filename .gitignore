@@ -3,3 +3,5 @@ venv/
 __pycache__/
 offers.db
 *.log
+.env
+.env.save
