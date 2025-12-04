@@ -24,6 +24,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+logging.warning("⚡ AUTODEPLOY TEST ⚡")
+
 # ================== ENV ==================
 
 load_dotenv(".env")
@@ -42,7 +44,8 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 
 # ================== DB ==================
 
-DB_PATH = "offers.db"
+DB_PATH = os.getenv("DB_PATH", "offers.db")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 
 async def init_db() -> None:
@@ -265,7 +268,7 @@ async def interpret_text_with_openai(text: str) -> dict:
     )
 
     resp = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=OPENAI_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": text},
@@ -468,6 +471,7 @@ async def cmd_offer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def post_init(application):
     await init_db()
+    logger.info("⚙️ Конфигурация: DB_PATH=%s, OPENAI_MODEL=%s", DB_PATH, OPENAI_MODEL)
 
 
 def main():
