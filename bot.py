@@ -1,6 +1,7 @@
 import logging
 import os
 import json
+import subprocess
 from datetime import datetime
 
 from dotenv import load_dotenv
@@ -46,6 +47,22 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 
 DB_PATH = os.getenv("DB_PATH", "offers.db")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+STARTED_AT = datetime.utcnow().isoformat() + "Z"
+
+
+def get_last_commit_hash() -> str:
+    try:
+        commit = (
+            subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
+        )
+        return commit
+    except Exception as e:
+        logger.error("Не удалось получить хеш коммита: %s", e)
+        return "unknown"
+
+
+LAST_COMMIT_HASH = get_last_commit_hash()
 
 
 async def init_db() -> None:
@@ -466,6 +483,16 @@ async def cmd_offer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
+async def cmd_version(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    lines = [
+        "ℹ️ *Версия бота*",
+        f"Commit: `{LAST_COMMIT_HASH}`",
+        f"Запущен: {STARTED_AT}",
+    ]
+
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
 # ================== MAIN ==================
 
 
@@ -483,6 +510,7 @@ def main():
     )
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("version", cmd_version))
     app.add_handler(CommandHandler("offers", cmd_offers))
     app.add_handler(CommandHandler("offer", cmd_offer))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
