@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 class Settings:
     bot_token: str
     openai_api_key: str
-    openai_model: str = "gpt-4o-mini"
+    openai_model: str = "gpt-4.1"
     db_path: str = "offers.db"
     log_level: str = "INFO"
 

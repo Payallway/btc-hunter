@@ -7,7 +7,7 @@
    ```env
    BOT_TOKEN=...
    OPENAI_API_KEY=...
-   OPENAI_MODEL=gpt-4o-mini
+   OPENAI_MODEL=gpt-4.1
    DB_PATH=offers.db
    LOG_LEVEL=INFO
    ```
