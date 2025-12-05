@@ -261,7 +261,7 @@ def _looks_like_search(text: str) -> bool:
 def _normalize_conditions(offer: dict, fallback_text: str) -> dict:
     """
     Гарантируем, что у оффера есть поле conditions со строкой.
-    Если conditions пусты — кладём туда исходный текст.
+    Если conditions пусты или состоят из пробелов — кладём туда исходный текст.
     """
     if not isinstance(offer, dict):
         offer = {}
@@ -273,6 +273,8 @@ def _normalize_conditions(offer: dict, fallback_text: str) -> dict:
         offer["conditions"] = fallback_text
     elif not isinstance(conditions, str):
         offer["conditions"] = str(conditions)
+    elif not conditions.strip():
+        offer["conditions"] = fallback_text
 
     return offer
 
