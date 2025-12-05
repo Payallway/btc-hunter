@@ -258,6 +258,25 @@ def _looks_like_search(text: str) -> bool:
     return any(word in lowered for word in keywords)
 
 
+def _normalize_conditions(offer: dict, fallback_text: str) -> dict:
+    """
+    Гарантируем, что у оффера есть поле conditions со строкой.
+    Если conditions пусты — кладём туда исходный текст.
+    """
+    if not isinstance(offer, dict):
+        offer = {}
+
+    conditions = offer.get("conditions")
+
+    # Если conditions отсутствуют или нестрока — приводим к строке
+    if not conditions:
+        offer["conditions"] = fallback_text
+    elif not isinstance(conditions, str):
+        offer["conditions"] = str(conditions)
+
+    return offer
+
+
 async def interpret_text_with_openai(text: str) -> dict:
     """
     Определяем: это ОФФЕР или ПОИСК.
@@ -336,12 +355,13 @@ async def interpret_text_with_openai(text: str) -> dict:
         # Гарантируем, что оффер содержит хоть что-то в conditions (в крайнем случае — весь текст)
         if mode == "offer":
             offer = data.get("offer") or {}
-            if not isinstance(offer, dict):
-                offer = {}
-            conditions = offer.get("conditions")
-            if not conditions:
-                offer["conditions"] = text
+            offer = _normalize_conditions(offer, text)
             data["offer"] = offer
+        else:
+            # Даже в режиме поиска гарантируем корректный объект поиска для предсказуемой дальнейшей логики
+            search = data.get("search")
+            if not isinstance(search, dict):
+                data["search"] = {}
         return data
     except Exception as e:
         raise RuntimeError(f"Не удалось распарсить JSON OpenAI: {e}\nОтвет: {content}")
@@ -377,7 +397,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # ---------- РЕЖИМ ОФФЕРА ----------
         if mode == "offer":
-            parsed = (data.get("offer") or {})
+            parsed = _normalize_conditions((data.get("offer") or {}), user_text)
             offer_id = await save_offer(parsed, user_text)
 
             msg_lines = [
