@@ -240,6 +240,24 @@ async def search_offers(filters: dict, limit: int = 20):
 # ================== OPENAI ЛОГИКА ==================
 
 
+def _looks_like_search(text: str) -> bool:
+    """Простая эвристика: текст похож на поисковый запрос ("дай", "ищу" и т.д.)."""
+    lowered = text.lower()
+    keywords = [
+        "дай",
+        "покажи",
+        "нужны",
+        "ищу",
+        "найди",
+        "хочу",
+        "можно",
+        "покажи",
+        "выдай",
+        "ищем",
+    ]
+    return any(word in lowered for word in keywords)
+
+
 async def interpret_text_with_openai(text: str) -> dict:
     """
     Определяем: это ОФФЕР или ПОИСК.
@@ -267,6 +285,7 @@ async def interpret_text_with_openai(text: str) -> dict:
       }
     }
     """
+    heuristic_mode = "search" if _looks_like_search(text) else "offer"
     system_prompt = (
         "Ты ассистент CRM агрегатора платежей.\n"
         "Пользователь может:\n"
@@ -274,18 +293,27 @@ async def interpret_text_with_openai(text: str) -> dict:
         "2) задать ПОИСКОВЫЙ ЗАПРОС по базе офферов простыми словами.\n\n"
         "Твоя задача — определить режим и вернуть ТОЛЬКО валидный JSON.\n"
         "Никакого текста кроме JSON.\n\n"
-        "Правила:\n"
-        "- Если это описание конкретного канала/мерчанта с условиями — это 'offer'.\n"
-        "- Если фразы вида 'дай все офферы...', 'покажи офферы по ...', "
-        " 'офферы по сбп рф дешевле 11%' — это 'search'.\n"
-        "- 'kind' = 'channel', если это канал/провайдер; 'merchant', если конкретный мерчант.\n"
-        "- 'fee_percent' — числовое значение комиссии в процентах (если понятно, иначе null).\n"
-        "- В поиске country/method/status/kind — короткие текстовые маркеры для фильтрации.\n"
-        "- Проценты в поиске: 'дешевле 11%' => max_fee_percent = 11.0.\n"
-    )
+        "Подсказка: эвристика сочла, что это '{heuristic_mode}'. Если явных слов поиска нет, предпочитай 'offer'.\n\n"
+        "Правила классификации:\n"
+        "- 'search' если пользователь просит показать, найти, выдать, дай, нужны и т.п.\n"
+        "- 'offer' если перечислены условия конкретного канала/мерчанта (комиссия, курс, лимиты и т.д.).\n"
+        "- Если сомневаешься — выбери 'offer' и сохрани весь текст в 'conditions'.\n\n"
+        "Парсинг оффера (обязательно разложи всё, что видишь):\n"
+        "- Явно вытаскивай country/geo, method, fee/комиссию (в процентах/фикс), rate/курс, limits/лимиты, kind (channel/merchant), fee_percent.\n"
+        "- Если нашёл сумму/цифры, но не понимаешь поле — скопируй в 'conditions'.\n"
+        "- Всё, что не удалось разложить по полям, обязательно помести в 'conditions' (комментарии).\n"
+        "- 'short_summary' — одно предложение о сути оффера.\n"
+        "- Не оставляй пустых строк и null без причины: если поле явно указано в тексте — заполни его.\n\n"
+        "Парсинг поиска:\n"
+        "- Понимай проценты: 'дешевле 11%' => max_fee_percent = 11.0.\n"
+        "- Учитывай любые указания по стране/методу/статусу/kind.\n"
+        "- Если явного запроса нет, но текст похож на оффер — верни 'offer'.\n"
+    ).format(heuristic_mode=heuristic_mode)
 
     resp = client.chat.completions.create(
         model=OPENAI_MODEL,
+        response_format={"type": "json_object"},
+        temperature=0,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": text},
@@ -299,6 +327,21 @@ async def interpret_text_with_openai(text: str) -> dict:
         data = json.loads(content)
         if not isinstance(data, dict):
             raise ValueError("JSON не является объектом")
+
+        mode = data.get("mode")
+        if mode not in {"offer", "search"}:
+            mode = heuristic_mode
+            data["mode"] = mode
+
+        # Гарантируем, что оффер содержит хоть что-то в conditions (в крайнем случае — весь текст)
+        if mode == "offer":
+            offer = data.get("offer") or {}
+            if not isinstance(offer, dict):
+                offer = {}
+            conditions = offer.get("conditions")
+            if not conditions:
+                offer["conditions"] = text
+            data["offer"] = offer
         return data
     except Exception as e:
         raise RuntimeError(f"Не удалось распарсить JSON OpenAI: {e}\nОтвет: {content}")
